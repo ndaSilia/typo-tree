@@ -1,2 +1,2 @@
-# typo-tree
+# Typo Tree
 the text generator for writing novels.
