@@ -18,7 +18,7 @@ class DataSet():
         self.n_words, self.n_vocab = self.Summary()
         self.seq_length = seq_length
         self.step = step
-        self.train_x, self.train_y, self.n_patterns = self.SetInput()
+        self.train_x, self.train_y, self.train_size = self.SetInput()
         self.x, self.y = self.Encoder()
     
     def Normalize(self):
@@ -42,12 +42,12 @@ class DataSet():
         for i in range(0, self.n_words - self.seq_length, self.step):
             sentences.append(self.data[i:i+self.seq_length])
             next_words.append(self.data[i+self.seq_length])
-        n_patterns = len(sentences)
-        return sentences, next_words, n_patterns
+        train_size = len(sentences)
+        return sentences, next_words, train_size
     
     def Encoder(self):
-        x = np.zeros((len(self.train_x), self.seq_length, self.n_vocab))
-        y = np.zeros((len(self.train_x), n_vocab))
+        x = np.zeros((self.train_size, self.seq_length, self.n_vocab))
+        y = np.zeros((self.train_size, n_vocab))
         for i, s in enumerate(self.train_x):
             for t, word in enumerate(s):
                 x[i, t, self.word2int[word]] = 1
