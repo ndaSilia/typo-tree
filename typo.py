@@ -47,33 +47,39 @@ class DataSet():
     
     def Encoder(self):
         x = np.zeros((self.train_size, self.seq_length, self.n_vocab))
-        y = np.zeros((self.train_size, n_vocab))
+        y = np.zeros((self.train_size, self.n_vocab))
         for i, s in enumerate(self.train_x):
             for t, word in enumerate(s):
                 x[i, t, self.word2int[word]] = 1
             y[i, self.word2int[self.train_y[i]]] = 1
         return x, y
+    
+    def Decoder(self, code):
+        code = np.asarray(code)
+        code = np.log(code)
+        exp_code = np.exp(code)
+        code = exp_code / np.sum(exp_code)
+        chance = np.random.multinomial(1, code, 1)
+        return np.argmax(chance)
 
 
 class LSTMModel():
-    def __init__(self, hidden_size, dropout_rate, epochs, batch_size, path, seq_len, step=0):
+    def __init__(self, hidden_size, dropout_rate, path, seq_len, step=1):
         self.data = DataSet(path, seq_len, step)
         self.hidden_size = hidden_size
         self.dropout_rate = dropout_rate
         self.model, self.callbacks = self.ModelBuild()
-        self.epochs = epochs
-        self.batch_size = batch_size
         self.x = self.data.x
         self.y = self.data.y
         self.history = list()
     
     def ModelBuild(self):
         model = Sequential()
-        model.add(LSTM(self.hidden_size, input_shape=(seq_length, n_vocab), return_sequences=True))
+        model.add(LSTM(self.hidden_size, input_shape=(self.data.seq_length, self.data.n_vocab), return_sequences=True))
         model.add(Dropout(self.dropout_rate))
         model.add(LSTM(self.hidden_size))
         model.add(Dropout(self.dropout_rate))
-        model.add(Dense(n_vocab, activation='softmax'))
+        model.add(Dense(self.data.n_vocab, activation='softmax'))
         optimizer = RMSprop(learning_rate=0.01)
         model.compile(loss='categorical_crossentropy', optimizer=optimizer)
         filepath = "saved_weights/saved_weights-{epoch:02d}-{loss:.4f}.hdf5"
@@ -82,8 +88,21 @@ class LSTMModel():
         callbacks_list = [checkpoint]
         return model, callbacks_list
     
-    def Train(self):
-        self.history = self.model.fit(self.x, self.y, batch_size=self.batch_size, epochs=self.epochs, callbacks=self.callbacks)
+    def Train(self, batch_size, epochs):
+        self.history = self.model.fit(self.x, self.y, batch_size=batch_size, epochs=epochs, callbacks=self.callbacks)
+    
+    def Prediction(self, code):
+        if len(code) > self.seq_length:
+            code = code[len(code)-self.seq_length:len(code)]
+        elif len(code) < self.seq_length:
+            for _ in range(self.seq_length-len(code)):
+                code = ' ' + code
+        x_pred = np.zeros((1, self.seq_length, self.n_vocab))
+        for t, word in enumerate(code):
+            x_pred[0, t, self.data.word2int[char]] = 1.
+        preds = self.model.predict(x_pred, verbose=0)
+        next_word = self.data.int2word[self.data.Decoder(preds)]
+        return next_word
     
     def ShowPlt(self, types):
         if types == 'loss':
@@ -95,3 +114,14 @@ class LSTMModel():
             plt.ylabel('Loss')
             plt.legend()
             plt.show()
+
+__path__ = './data.txt'
+models = LSTMModel(128, 0.2, __path__, 200)
+models.Train(128, 100)
+user_input = input('')
+gen = user_input
+n_letter = 400
+for i in range(n_letter):
+    pred = models.Prediction(user_input)
+    gen += pred
+    user_input = user_input[1:] + pred
