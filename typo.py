@@ -1,5 +1,5 @@
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, LSTM, Embedding
+from keras.layers import Dense, Dropout, LSTM
 from keras.optimizers import RMSprop
 import numpy as np
 import random
