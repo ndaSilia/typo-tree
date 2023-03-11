@@ -3,7 +3,6 @@ from keras.layers import Dense, Dropout, LSTM
 from keras.optimizers import RMSprop
 import numpy as np
 import random
-import sys
 import re
 from keras.callbacks import ModelCheckpoint
 from matplotlib import pyplot as plt
