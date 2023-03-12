@@ -1,109 +1,103 @@
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, LSTM
 from keras.optimizers import RMSprop
+from keras.callbacks import ModelCheckpoint
 import numpy as np
 import random
 import re
-from keras.callbacks import ModelCheckpoint
 from matplotlib import pyplot as plt
 
 
-class DataSet():
-    def __init__(self, path, seq_length, step):
-        self.path = path
-        self.data, self.words = self.Normalize()
-        self.word2int = self.Dictionaries(0)
-        self.int2word = self.Dictionaries(1)
-        self.n_words, self.n_vocab = self.Summary()
-        self.seq_length = seq_length
-        self.step = step
-        self.train_x, self.train_y, self.train_size = self.SetInput()
-        self.x, self.y = self.Encoder()
+class DataBase():
+    def __init__(self, path, seq_len, step):
+        self.data, self.words = self.Normalize(path)
+        self.word2int, self.int2word = self.Dictionary()
+        self.n_words, self.n_vocab = len(self.data), len(self.words)
+        self.x, self.y, self.train_size = self.Vectorize(seq_len, step)
+        self.seq_len = seq_len
     
-    def Normalize(self):
-        data = open(self.path, 'r', encoding='utf-8').read()
+    def Normalize(self, path):
+        data = open(path, 'r', encoding='utf-8').read()
         data = re.sub(r'[^\uAC00-\uD7A3 0-9a-zA-Z?!.,]', '', data)
         words = sorted(list(set(data.lower())))
         return data, words
     
-    def Dictionaries(self, types):
-        if types == 0:
-            return dict((w, i) for i, w in enumerate(self.words))
-        elif types == 1:
-            return dict((i, w) for i, w in enumerate(self.words))
+    def Dictionary(self):
+        w2i = dict((w, i) for i, w in enumerate(self.words))
+        i2w = dict((i, w) for i, w in enumerate(self.words))
+        return w2i, i2w
     
-    def Summary(self):
-        return len(self.data), len(self.words)
+    def Vectorize(self, seq_len, step):
+        x = []
+        y = []
+        for i in range(0, self.n_words - seq_len, step):
+            x.append(self.data[i:i+seq_len])
+            y.append(self.data[i+seq_len])
+        train_size = len(x)
+        X = np.zeros((train_size, seq_len, self.n_vocab))
+        Y = np.zeros((train_size, self.n_vocab))
+        for i, s in enumerate(x):
+            for t, w in enumerate(s):
+                X[i, t, self.word2int[w]] = 1
+            Y[i, self.word2int[y[i]]] = 1
+        return X, Y, train_size
     
-    def SetInput(self):
-        sentences = []
-        next_words = []
-        for i in range(0, self.n_words - self.seq_length, self.step):
-            sentences.append(self.data[i:i+self.seq_length])
-            next_words.append(self.data[i+self.seq_length])
-        train_size = len(sentences)
-        return sentences, next_words, train_size
+    def Encoder(self, code, seq_len):
+        if len(code) > seq_len:
+            code = code[len(code)-seq_len:len(code)]
+        elif len(code) < seq_len:
+            for _ in range(seq_len-len(code)):
+                code = ' ' + code
+        encode = np.zeros((1, seq_len, self.n_vocab))
+        for t, word in enumerate(code):
+            encode[0, t, self.word2int[word]] = 1.
+        return encode
     
-    def Encoder(self):
-        x = np.zeros((self.train_size, self.seq_length, self.n_vocab))
-        y = np.zeros((self.train_size, self.n_vocab))
-        for i, s in enumerate(self.train_x):
-            for t, word in enumerate(s):
-                x[i, t, self.word2int[word]] = 1
-            y[i, self.word2int[self.train_y[i]]] = 1
-        return x, y
-    
-    def Decoder(self, code):
-        code = np.asarray(code)
-        code = np.log(code)
-        exp_code = np.exp(code)
-        code = exp_code / np.sum(exp_code)
-        chance = np.random.multinomial(1, code, 1)
-        return np.argmax(chance)
+    def Decoder(self, code, types):
+        if types == 'random_by_confidence':
+            chance = code[0]
+            chance_sum = chance / np.sum(chance)
+            decoded = np.random.choice(len(chance), p=chance_sum)
+            return self.int2word[decoded]
+        elif types == 'highest':
+            decoded = np.argmax(code)
+            return self.int2word[decoded]
+            
 
 
 class LSTMModel():
-    def __init__(self, hidden_size, dropout_rate, path, seq_len, step=1):
-        self.data = DataSet(path, seq_len, step)
-        self.hidden_size = hidden_size
-        self.dropout_rate = dropout_rate
-        self.model, self.callbacks = self.ModelBuild()
-        self.x = self.data.x
-        self.y = self.data.y
+    def __init__(self, path, seq_len=60, step=1, hidden_size=128, dropout=0.2):
+        self.data = DataBase(path, seq_len, step)
+        self.x, self.y = self.data.x, self.data.y
+        self.model, self.callbacks = self.ModelBuild(hidden_size, seq_len, self.data.n_vocab, dropout)
         self.history = list()
     
-    def ModelBuild(self):
+    def ModelBuild(self, hidden_size, seq_len, n_vocab, dropout):
         model = Sequential()
-        model.add(LSTM(self.hidden_size, input_shape=(self.data.seq_length, self.data.n_vocab), return_sequences=True))
-        model.add(Dropout(self.dropout_rate))
-        model.add(LSTM(self.hidden_size))
-        model.add(Dropout(self.dropout_rate))
-        model.add(Dense(self.data.n_vocab, activation='softmax'))
-        optimizer = RMSprop(learning_rate=0.01)
-        model.compile(loss='categorical_crossentropy', optimizer=optimizer)
+        model.add(LSTM(hidden_size, input_shape=(seq_len, n_vocab), return_sequences=True))
+        model.add(Dropout(dropout))
+        model.add(LSTM(hidden_size))
+        model.add(Dropout(dropout))
+        model.add(Dense(n_vocab, activation='softmax'))
+        model.compile(loss='categorical_crossentropy', optimizer=RMSprop(learning_rate=0.01))
+        model.summary()
         filepath = "saved_weights/saved_weights-{epoch:02d}-{loss:.4f}.hdf5"
         checkpoint = ModelCheckpoint(
             filepath, monitor='loss', metrics=['accuracy'], verbose=1, save_best_only=True, mode='min', save_freq=2500)
-        callbacks_list = [checkpoint]
-        return model, callbacks_list
+        callbacks = [checkpoint]
+        return model, callbacks
     
-    def Train(self, batch_size, epochs):
+    def ModelTrain(self, batch_size, epochs, save=True):
         self.history = self.model.fit(self.x, self.y, batch_size=batch_size, epochs=epochs, callbacks=self.callbacks)
+        if save:
+            self.model.save('typo_tree.h5')
     
-    def Prediction(self, code):
-        if len(code) > self.seq_length:
-            code = code[len(code)-self.seq_length:len(code)]
-        elif len(code) < self.seq_length:
-            for _ in range(self.seq_length-len(code)):
-                code = ' ' + code
-        x_pred = np.zeros((1, self.seq_length, self.n_vocab))
-        for t, word in enumerate(code):
-            x_pred[0, t, self.data.word2int[char]] = 1.
-        preds = self.model.predict(x_pred, verbose=0)
-        next_word = self.data.int2word[self.data.Decoder(preds)]
-        return next_word
+    def Predict(self, input_data, types='random_by_confidence'):
+        preds = self.model.predict(self.data.Encoder(input_data, self.data.seq_len), verbose=0)
+        preds = self.data.Decoder(preds, types)
+        return preds
     
-    def ShowPlt(self, types):
+    def ShowPlot(types='loss'):
         if types == 'loss':
             loss = history.history['loss']
             epochs = range(1, len(loss) + 1)
@@ -114,13 +108,13 @@ class LSTMModel():
             plt.legend()
             plt.show()
 
+
 __path__ = './data.txt'
-models = LSTMModel(128, 0.2, __path__, 200)
-models.Train(128, 100)
-user_input = input('')
-gen = user_input
-n_letter = 400
-for i in range(n_letter):
-    pred = models.Prediction(user_input)
-    gen += pred
-    user_input = user_input[1:] + pred
+model = LSTMModel(__path__, 140)
+model.ModelTrain(128, 20)
+user_input = input('Text: ')
+seed = user_input
+n_latter = 400
+for i in range(n_latter):
+    user_input += model.Predict(user_input)
+print('Your seed: ' + seed + ' and model predict: ' + user_input[len(seed):])
