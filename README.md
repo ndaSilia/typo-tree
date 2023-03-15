@@ -13,12 +13,12 @@ Typo는 유저 입력값, 즉 시드(Seed)에 이어지는 이야기를 만듭�
 ### 모델
 소설 특성상 문맥을 읽고 문장 간 논리의 지속성을 위해 LSTM을 차용하였습니다.
 ### 하이퍼 파라미터
-seq_len = 60
-step = 1
-hidden_size = 128
-dropout = 0.2
-batch_size = 128
-epochs = 100
+- seq_len = 60
+- step = 1
+- hidden_size = 128
+- dropout = 0.2
+- batch_size = 128
+- epochs = 100
 
 ## 개발 일지
 ### 3/14
